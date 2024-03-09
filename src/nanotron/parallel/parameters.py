@@ -194,6 +194,7 @@ def sanity_check(root_module: nn.Module):
     Format:
      - all parameters are `NanotronParameter`, this allows us to add metadata to a parameter.
     """
+    # Tiancheng: all nn.Parameter are replaced with NanotronParameter.
     for name, param in root_module.named_parameters():
         if not isinstance(param, NanotronParameter):
             raise ValueError(

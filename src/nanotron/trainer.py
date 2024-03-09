@@ -444,6 +444,7 @@ class DistributedTrainer:
             )
 
         # TODO @nouamane: Put this in hooks so we can overlap communication with gradient computation on the last backward pass.
+        # Tiancheng: AR tied weights(e.g. vocab embeddings) grad across DP
         sync_tied_weights_gradients(
             module=self.unwrapped_model,
             parallel_context=self.parallel_context,
@@ -476,6 +477,7 @@ class DistributedTrainer:
                 [output["loss"] for output in outputs]
             ).sum()  # already divided by n_micro_batches_per_batch
             # sync loss across DP
+            # Tiancheng: saved output loss for each batch and reduce it here and AR, just to log it??
             handle = dist.all_reduce(loss_avg, group=self.parallel_context.dp_pg, async_op=True, op=dist.ReduceOp.AVG)
         else:
             loss_avg = None
@@ -716,6 +718,7 @@ class DistributedTrainer:
             module.init_rotary_embeddings()
 
         # Mark some parameters as tied
+        # Tiancheng: Tie parameters (e.g. vocab embedding and output lm head).
         self._mark_tied_parameters(model=model, parallel_context=parallel_context, parallel_config=parallel_config)
 
         # count number of parameters

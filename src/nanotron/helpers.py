@@ -65,6 +65,7 @@ def _vocab_size_with_padding(orig_vocab_size: int, pg_size: int, make_vocab_size
 
 def init_random_states(parallel_config: ParallelismArgs, tp_pg: ProcessGroup):
     # Get synchronized random states
+    # Tiancheng: I think it means if no SP, then random states in layernorm&dropout should be synced (computation is replicated on each TP rank)
     if parallel_config is None or parallel_config.tp_mode is TensorParallelLinearMode.ALL_REDUCE:
         random_states = RandomStates(
             {"tp_synced": get_synced_random_state(random_state=get_current_random_state(), pg=tp_pg)}
@@ -338,6 +339,7 @@ def init_optimizer_and_grad_accumulator(
                     for name, param in unwrapped_model.named_parameters()
                 },
             ),
+            # Tiancheng: grad is averaged.
             hook=get_fp32_accum_hook(
                 reduce_scatter=optimizer.inherit_from(ZeroDistributedOptimizer), reduce_op=dist.ReduceOp.AVG
             ),

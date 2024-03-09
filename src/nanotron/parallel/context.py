@@ -66,6 +66,7 @@ class ParallelContext:
         """Initialize 3D parallelism's all process groups."""
         dist.barrier()
         world_size = int(os.environ["WORLD_SIZE"])
+        # Tiancheng: Expert parallel as a single dimension? Always TP as innermost for efficiency.
         ranks = np.arange(0, world_size).reshape(
             (
                 self.expert_parallel_size,
@@ -77,6 +78,7 @@ class ParallelContext:
         self.world_ranks_to_pg = {}
 
         # Relevant process groups containing the current rank
+        # Tiancheng: clever way to assign process group.
         self.tp_pg = self.create_new_group(ranks.transpose((0, 1, 2, 3)).reshape((-1, self.tensor_parallel_size)))
         self.dp_pg = self.create_new_group(ranks.transpose((3, 0, 1, 2)).reshape((-1, self.data_parallel_size)))
         self.pp_pg = self.create_new_group(ranks.transpose((2, 3, 0, 1)).reshape((-1, self.pipeline_parallel_size)))

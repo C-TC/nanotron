@@ -219,6 +219,7 @@ def build_model(
             ]
         )
 
+        # Tiancheng: Assign PP blocks to PP ranks by balancing "compute cost" in each PP rank.
         thresholds = [block_cumulative_costs[-1] * ((rank + 1) / pp_size) for rank in range(pp_size)]
         assert thresholds[-1] >= block_cumulative_costs[-1]
         target_pp_rank_idx = 0

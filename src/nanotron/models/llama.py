@@ -172,6 +172,7 @@ class MLP(nn.Module):
         return {"hidden_states": hidden_states}
 
 
+# Tiancheng: use flashattention by default.
 class CoreAttention(nn.Module):
     def __init__(self, config: LlamaConfig, parallel_config: Optional[ParallelismArgs], layer_idx: int):
         super().__init__()
@@ -317,6 +318,7 @@ class CausalSelfAttention(nn.Module, AttachableStore):
             contiguous_chunks=qkv_contiguous_chunks,
         )
         # TODO(kunhao): We want to have only one version per device and not one version per layer.
+        # Tiancheng: Redundancy here. One RoPE per layer instead of per device.
         self.rotary_embedding = RotaryEmbedding(
             dim=self.d_qk,
             end=config.max_position_embeddings,
@@ -607,6 +609,7 @@ class LlamaDecoderLayer(nn.Module):
         layer_idx: int,
     ):
         super().__init__()
+        # Use layernorm in flash_attn triton.
         self.input_layernorm = TritonRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.attn = CausalSelfAttention(
             config=config,
@@ -787,6 +790,7 @@ class LlamaModel(nn.Module):
         return fp32_sharded_logits, hidden_states
 
     def get_block_compute_costs(self):
+        # Tiancheng: what is "compute cost" here? seems like memory cost.
         """Computes the compute cost of each block in the model so that we can do a better job of load balancing."""
         model_config = self.config
         d_ff = model_config.intermediate_size

@@ -160,6 +160,7 @@ class _ColumnLinearAsyncCommunication(torch.autograd.Function):
 
                 handle = dist.all_gather_into_tensor(gathered_tensor, tensor, group=group, async_op=True)
 
+                # Tiancheng: Aync meaning here.
                 # Compute a shard of column_linear in the same time of AllGather
                 # We could compute the matmul of current holding shard and the current rank's weight
                 # We assume that rank 0 holds w0, rank 1 holds w1, etc.
@@ -280,6 +281,7 @@ class _ColumnLinearAsyncCommunication(torch.autograd.Function):
                     dtype=tensor.dtype,
                     requires_grad=False,
                 )
+                # Tiancheng: same comm/comp overlap as Megatron.
                 handle = dist.all_gather_into_tensor(unsharded_tensor, tensor, group=group, async_op=True)
                 # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
                 # gather is scheduled before the tensor gradient computation
@@ -362,6 +364,7 @@ def column_linear(
 class _RowLinearAsyncCommunication(torch.autograd.Function):
     @staticmethod
     def forward(ctx, tensor, weight, bias, group, tp_mode):
+        # Tiancheng: this is funny? AR tp mode supports async in columnlinear.
         assert (
             tp_mode is TensorParallelLinearMode.REDUCE_SCATTER
         ), f"async communication in RowLinear only supports REDUCE_SCATTER, got {tp_mode}"
@@ -412,8 +415,10 @@ class _RowLinearAsyncCommunication(torch.autograd.Function):
             # https://github.com/pytorch/pytorch/blob/c47cf9bc7f9e02f649ab4ed53fe4d35732c92ab6/torch/_refs/__init__.py#L2761
             grad_output = grad_output.contiguous()
 
+            # Tiangcheng: so here only supports REDUCE_SCATTER.
             handle_0 = dist.all_gather_into_tensor(total_grad_output, grad_output, group=group, async_op=True)
 
+        # Tiancheng: local act grad comp overlap allgather. Not weight.T??
         grad_tensor = grad_output.matmul(weight)
 
         # wait for the first all_gather to finish before starting the second all_gather
@@ -436,6 +441,7 @@ class _RowLinearAsyncCommunication(torch.autograd.Function):
                 requires_grad=False,
             )
 
+            # Tiancheng: TODO: different from megatron?
             handle_1 = dist.all_gather_into_tensor(total_grad_tensor, grad_tensor, group=group, async_op=True)
 
         # Convert the tensor shapes to 2D for execution compatibility
@@ -451,6 +457,7 @@ class _RowLinearAsyncCommunication(torch.autograd.Function):
         total_grad_output = total_grad_output.view(math.prod(total_grad_output_first_dims), total_grad_output_last_dim)
 
         # TODO @thomasw21: This sounds like we don't have the optimal physical layout
+        # Tiancheng: Not tensor.T @ total_grad_output?
         grad_weight = total_grad_output.t().matmul(tensor)
         grad_bias = total_grad_output.sum(dim=0) if use_bias else None
 

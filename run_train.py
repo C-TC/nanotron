@@ -71,6 +71,7 @@ def get_dataloader_from_data_stage(trainer: DistributedTrainer, data: DataArgs):
             rank=0,
         )
 
+        # Tiancheng: Only 1st device process dataset.
         # We need to the 1st device to process dataset and cache it, then other devices load from cache
         with main_rank_first(trainer.parallel_context.world_pg):
             # TODO @nouamanetazi: this may timeout before 1st device finishes processing dataset. Can we have a ctxmanager to modify timeout?

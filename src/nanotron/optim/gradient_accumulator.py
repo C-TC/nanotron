@@ -75,6 +75,7 @@ class FP32GradientAccumulator(GradientAccumulator):
             grad_buckets_named_params = named_parameters
 
         # Initialize grad bucket
+        # Tiancheng: half grad in parameter and a fp32 1D grad buffer for all params
         self.fp32_grad_buffers, self._contiguous_fp32_grad_buffer = self.build_grad_buffers(
             named_parameters=grad_buckets_named_params
         )
@@ -93,6 +94,7 @@ class FP32GradientAccumulator(GradientAccumulator):
             length = end_weight
 
         big_flat_buffer = torch.empty(length, dtype=torch.float, device="cuda")
+        # Tiancheng: half param and a fp32 1D param buffer for all params
         self.parameters = {
             name: {
                 "fp32": big_flat_buffer[start_weight:end_weight].view_as(param),
@@ -325,6 +327,8 @@ def get_fp32_accum_hook(
     """
     # s = torch.cuda.Stream()
 
+    # Tiancheng: TODO: check this in detail.
+    # 1. bucket by bucket. 2. reduce scatter inside each bucket. 3. comm fp32 grad if accum grad in fp32
     def fp32_accum_hook(state: FP32GradBucketManager, bucket: GradBucket) -> torch.futures.Future[torch.Tensor]:
         # nonlocal s
         # DDP groups grads in GradBuckets. This hook is called throughout the bwd pass, once each bucket is ready to overlap communication with computation.
