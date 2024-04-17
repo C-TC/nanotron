@@ -199,8 +199,12 @@ class ParallelDroplessMLP(torch.nn.Module):
         )
         return x, tokens_per_expert
 
+    # CTC: called when expert_pg_size > 1, so all2all is used.
     def parallel_forward_once(self, x, expert_weights, top_experts):
         with torch.no_grad():
+            # CTC: top_experts: [sequence_length * batch_size, k]
+            # tokens sorted, indices maps tokens to original order, bin_ids maps tokens to experts
+            # bins is the cumulative sum of tokens per expert, tokens_per_expert is the count of tokens per expert.
             indices, bin_ids, bins, tokens_per_expert = self.indices_and_bins(top_experts)
             repeated_tokens_per_expert = ops.repeat(tokens_per_expert, (self.hidden_sharding_degree,))
             parallel_tokens_per_expert = torch.empty_like(repeated_tokens_per_expert)
@@ -235,6 +239,7 @@ class ParallelDroplessMLP(torch.nn.Module):
 
         # Start the cross-device permutation asynchronously so we can
         # overlap communication with computation.
+        # CTC: all_to_all with variable input/output slice sizes to dispatch tokens to experts.
         parallel_x, parallel_x_handle = all_to_all(
             x, recv_counts, send_counts, self.expert_parallel_group, async_op=True
         )
@@ -409,6 +414,7 @@ class ExpertParallel(nn.Module):
         scale_gradient(self.module, 1 / self.expert_parallel_size)
 
 
+# CTC: handles multiple experts per rank. TP comm implemented in sdd/dsd.
 class SparseMLP(nn.Module):
     def __init__(
         self,
@@ -446,6 +452,7 @@ class SparseMLP(nn.Module):
 
         # TODO @nouamane: jit
         self.act = partial(F.gelu, approximate="tanh")
+        # CTC: TODO: in megablocks, sdd and dsd first AG weigths and perform local computation. Seems because each TP rank holds differnent input data?
         self.sdd = partial(wp.sdd_nt, group=self.tp_pg) if self.tp_pg.size() > 1 else stk.ops.sdd
         self.dsd = partial(wp.dsd_nn, group=self.tp_pg) if self.tp_pg.size() > 1 else stk.ops.dsd
 
