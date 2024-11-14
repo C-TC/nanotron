@@ -14,7 +14,7 @@
 # limitations under the License.
 """PyTorch LLaMa model."""
 
-from typing import Dict, Optional, Union, List
+from typing import Callable, Dict, Optional, Tuple, Union, List
 
 import torch
 from torch import nn
@@ -174,7 +174,7 @@ class MLP(nn.Module):
 
 
 class CoreAttention(nn.Module):
-    def __init__(self, config: LlamaConfig, parallel_config: Optional[ParallelismArgs], layer_idx: int):
+    def __init__(self, config: LlamaConfig, parallel_config: Optional[ParallelismArgs], layer_idx: int, window_size: Tuple[int, int]):
         super().__init__()
         # TODO @thomasw21: GPT has a weird `d_kv` config which I'm guessing is essentically a `d_qkv`
         assert (
@@ -183,6 +183,7 @@ class CoreAttention(nn.Module):
         self.d_qk = config.hidden_size // config.num_attention_heads
         self.d_v = config.hidden_size // config.num_attention_heads
         self.is_using_mup = config.is_using_mup
+        self.window_size = window_size
 
         self.checkpoint_attention = False  # Because flash_attn already does checkpointing
 
@@ -208,6 +209,7 @@ class CoreAttention(nn.Module):
             softmax_scale=softmax_scale,
             causal=causal,
             return_attn_probs=False,
+            window_size=self.window_size,
         )
 
         return attn_output
@@ -281,6 +283,26 @@ class CausalSelfAttention(nn.Module, AttachableStore):
         self.d_model = config.hidden_size
         self.is_using_mup = config.is_using_mup
 
+        # sliding window attention
+        self.is_local_attention = False
+        if config.window_size is not None:
+            # make sure layer 0 is global attention
+            if config.local_attn_every_n_layers:
+                if (layer_idx + 1) % config.local_attn_every_n_layers == 0:
+                    self.is_local_attention = True
+            elif config.global_attn_every_n_layers:
+                if layer_idx % config.global_attn_every_n_layers != 0:
+                    self.is_local_attention = True
+        if self.is_local_attention:
+            '''
+            If window_size != (-1, -1), implements sliding window local attention. Query at position i
+            will only attend to keys between
+            [i + seqlen_k - seqlen_q - window_size[0], i + seqlen_k - seqlen_q + window_size[1]] inclusive.
+            '''
+            self.window_size = (config.window_size - 1, 0)
+        else:
+            self.window_size = (-1, -1)
+
         # TODO @thomasw21: refactor so that we store that default in a single place.
         tp_mode = parallel_config.tp_mode if parallel_config is not None else TensorParallelLinearMode.ALL_REDUCE
         tp_linear_async_communication = (
@@ -329,6 +351,7 @@ class CausalSelfAttention(nn.Module, AttachableStore):
             config,
             parallel_config=parallel_config,
             layer_idx=layer_idx,
+            window_size=self.window_size,
         )
 
         self.prefill_kv_len = (

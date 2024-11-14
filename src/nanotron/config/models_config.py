@@ -54,6 +54,9 @@ class LlamaConfig:
     tie_word_embeddings: bool = False
     use_cache: bool = True
     vocab_size: int = 32000
+    window_size: Optional[int] = 1024 # window size for the sliding window attention
+    local_attn_every_n_layers: Optional[int] = None
+    global_attn_every_n_layers: Optional[int] = None
 
     def __post_init__(self):
         # NOTE: user don't set self._init_method, ModelArgs will set it
@@ -64,6 +67,10 @@ class LlamaConfig:
         # for backward compatibility
         if self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
+
+        if self.window_size is not None:
+            assert not all([self.local_attn_every_n_layers, self.global_attn_every_n_layers]), \
+                "Cannot use both local and global attention every n layers"
 
     @property
     def is_using_mup(self) -> bool:
